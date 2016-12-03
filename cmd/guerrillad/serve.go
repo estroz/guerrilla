@@ -78,6 +78,6 @@ func serve(cmd *cobra.Command, args []string) {
 	}
 
 	app := guerrilla.New(&appConfig)
-	go app.Start()
+	go app.Run()
 	sigHandler()
 }

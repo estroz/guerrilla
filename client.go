@@ -37,8 +37,13 @@ type Client struct {
 	bufin       *SMTPBufferedReader
 	bufout      *bufio.Writer
 	killedAt    time.Time
+	savedNotify chan bool
 	errors      int
 	id          int64
+}
+
+func NewClient() *Client {
+	return &Client{savedNotify: make(chan bool)}
 }
 
 func (c *Client) responseAdd(r string) {
@@ -52,4 +57,8 @@ func (c *Client) reset() {
 
 func (c *Client) kill() {
 	c.killedAt = time.Now()
+}
+
+func (c *Client) Notify(saved bool) {
+	c.savedNotify <- saved
 }

@@ -58,7 +58,7 @@ func NewServer(sc *ServerConfig, p *ClientPool) (*Server, error) {
 }
 
 // Begin accepting SMTP clients
-func (server *Server) Start() error {
+func (server *Server) Run() error {
 	listener, err := net.Listen("tcp", server.config.ListenInterface)
 	if err != nil {
 		return fmt.Errorf("Cannot listen on port: %s", err.Error())
@@ -117,6 +117,7 @@ func (server *Server) upgradeToTLS(client *Client) bool {
 // Closes a client connection
 func (server *Server) closeConn(client *Client) {
 	client.conn.Close()
+	server.pool.Put(client)
 	<-server.sem
 }
 

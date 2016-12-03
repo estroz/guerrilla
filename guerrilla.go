@@ -30,9 +30,9 @@ func New(ac *AppConfig) *Guerrilla {
 }
 
 // Entry point for the application. Starts all servers.
-func (g *Guerrilla) Start() {
+func (g *Guerrilla) Run() {
 	for _, s := range g.servers {
-		go s.Start()
+		go s.Run()
 	}
 }
 
@@ -60,7 +60,7 @@ func (cp *ClientPool) Get() *Client {
 	case c := <-cp.clients:
 		return c
 	default:
-		return &Client{}
+		return NewClient()
 	}
 }
 

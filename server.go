@@ -27,13 +27,15 @@ type Server struct {
 	maxMailSize int64
 	timeout     time.Duration
 	sem         chan int
+	pool        *ClientPool
 }
 
 // Creates and returns a new ready-to-run Server from a configuration
-func NewServer(sc *ServerConfig) (*Server, error) {
+func NewServer(sc *ServerConfig, p *ClientPool) (*Server, error) {
 	server := &Server{
 		config: sc,
 		sem:    make(chan int, sc.MaxClients),
+		pool:   p,
 	}
 
 	if server.config.RequireTLS || server.config.AdvertiseTLS {
@@ -56,7 +58,7 @@ func NewServer(sc *ServerConfig) (*Server, error) {
 }
 
 // Begin accepting SMTP clients
-func (server *Server) Start() error {
+func (server *Server) Run() error {
 	listener, err := net.Listen("tcp", server.config.ListenInterface)
 	if err != nil {
 		return fmt.Errorf("Cannot listen on port: %s", err.Error())
@@ -73,14 +75,14 @@ func (server *Server) Start() error {
 			continue
 		}
 
-		client := &Client{
-			conn:        conn,
-			address:     conn.RemoteAddr().String(),
-			connectedAt: time.Now(),
-			bufin:       NewSMTPBufferedReader(conn),
-			bufout:      bufio.NewWriter(conn),
-			id:          clientID,
-		}
+		client := server.pool.Get()
+		client.conn = conn
+		client.address = conn.RemoteAddr().String()
+		client.connectedAt = time.Now()
+		client.bufin = NewSMTPBufferedReader(conn)
+		client.bufout = bufio.NewWriter(conn)
+		client.id = clientID
+
 		server.sem <- 1
 		go server.handleClient(client)
 		clientID++
@@ -115,6 +117,7 @@ func (server *Server) upgradeToTLS(client *Client) bool {
 // Closes a client connection
 func (server *Server) closeConn(client *Client) {
 	client.conn.Close()
+	server.pool.Put(client)
 	<-server.sem
 }
 

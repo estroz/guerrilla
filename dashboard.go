@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	sc "github.com/gorilla/securecookie"
 )
 
 const (
@@ -20,8 +19,6 @@ const (
 	login          = "login.html"
 	dashboardPath  = "dashboard/html/index.html"
 	loginPath      = "dashboard/html/login.html"
-	cookieName     = "guerrilla_dashboard"
-	idHeader       = "X-Guerrilla-ID"
 	sessionTimeout = time.Hour * 24
 )
 
@@ -36,11 +33,10 @@ var (
 
 type Session struct {
 	Start, Expires time.Time
-	ID             int
-	SecureCookie   *sc.SecureCookie
+	ID             string
 }
 
-type sessionStore map[int]*Session
+type sessionStore map[string]*Session
 
 func (ss sessionStore) Clean() {
 	now := time.Now()
@@ -113,66 +109,44 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func startSession(w http.ResponseWriter) error {
-	key := sc.GenerateRandomKey(64)
-	s := sc.New(key, nil)
-	contents := map[string]string{
-		"id": strconv.Itoa(nextID),
-	}
-
-	encoded, err := s.Encode(cookieName, contents)
-	if err != nil {
-		return err
-	}
+	sessionID := newSessionID()
 
 	cookie := &http.Cookie{
-		Name:  "guerrilla_dashboard",
-		Value: encoded,
+		Name:  "SID",
+		Value: sessionID,
 		Path:  "/",
 		// Secure: true,
 	}
 
 	sess := &Session{
-		Start:        time.Now(),
-		Expires:      time.Now().Add(sessionTimeout), // TODO config for this
-		SecureCookie: s,
+		Start:   time.Now(),
+		Expires: time.Now().Add(sessionTimeout), // TODO config for this
+		ID:      sessionID,
 	}
 
 	http.SetCookie(w, cookie)
-	w.Header().Set(idHeader, contents["id"])
-	sessions[nextID] = sess
-	nextID++
-
+	sessions[sessionID] = sess
 	return nil
 }
 
+func newSessionID() string {
+	nextID++
+	return strconv.Itoa(nextID)
+}
+
 func isLoggedIn(r *http.Request) bool {
-	id, err := strconv.Atoi(r.Header.Get(idHeader))
+	c, err := r.Cookie("SID")
 	if err != nil {
 		return false
 	}
 
-	sess, ok := sessions[id]
-	if !ok || sess == nil {
-		return false
-	}
-
-	c, err := r.Cookie(cookieName)
-	if err != nil || c == nil {
+	sid := c.Value
+	sess, ok := sessions[sid]
+	if !ok {
 		return false
 	}
 
 	if sess.Expires.After(time.Now()) {
-		return false
-	}
-
-	contents := make(map[string]string)
-	err = sess.SecureCookie.Decode(cookieName, c.Value, &contents)
-	if err != nil {
-		return false
-	}
-
-	sid, _ := strconv.Atoi(contents["id"])
-	if sid != id {
 		return false
 	}
 

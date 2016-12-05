@@ -1,5 +1,9 @@
 package guerrilla
 
+// TODO replace secure cookie with regular cookie containing only ID
+// TODO remove custom id Header
+// TODO replace nextID with hash
+
 import (
 	"fmt"
 	"html/template"
@@ -15,7 +19,7 @@ const (
 	dashboard      = "index.html"
 	login          = "login.html"
 	dashboardPath  = "dashboard/html/index.html"
-	loginPath      = "dashboard/html/index.html"
+	loginPath      = "dashboard/html/login.html"
 	cookieName     = "guerrilla_dashboard"
 	idHeader       = "X-Guerrilla-ID"
 	sessionTimeout = time.Hour * 24
@@ -25,7 +29,7 @@ var (
 	// Cache of HTML templates
 	templates = template.Must(template.ParseFiles(dashboardPath, loginPath))
 	// Analytics configuration
-	config   *AnalyticsConfig = nil
+	config   *AnalyticsConfig
 	sessions sessionStore
 	nextID   = 1
 )
@@ -47,7 +51,8 @@ func (ss sessionStore) Clean() {
 	}
 }
 
-func (ss sessionStore) cleaner(ticker *time.Ticker) {
+func (ss sessionStore) cleaner() {
+	ticker := time.NewTicker(sessionTimeout)
 	for {
 		<-ticker.C
 		ss.Clean()
@@ -60,20 +65,20 @@ func Run(ac *AnalyticsConfig /*, ds *AnalyticsDataStore*/) {
 	r.HandleFunc("/", indexHandler)
 	r.HandleFunc("/login", loginHandler)
 
-	sessions := make(sessionStore)
-	tick := time.NewTicker(sessionTimeout)
-	go sessions.cleaner(tick)
+	sessions = make(sessionStore)
+	go sessions.cleaner()
 
 	http.ListenAndServe(ac.ListenInterface, r)
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(r.Method, " ", r.URL)
+	fmt.Println(r.Header)
 	if isLoggedIn(r) {
-		w.WriteHeader(http.StatusAccepted)
+		w.WriteHeader(http.StatusOK)
 		templates.ExecuteTemplate(w, dashboard, nil)
 	} else {
-		http.Redirect(w, r, "/login", http.StatusUnauthorized)
+		http.Redirect(w, r, "/login", http.StatusTemporaryRedirect)
 	}
 }
 
@@ -81,8 +86,11 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(r.Method, " ", r.URL)
 	switch r.Method {
 	case "GET":
-		// Print login screen
-		templates.ExecuteTemplate(w, login, nil)
+		if isLoggedIn(r) {
+			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		} else {
+			templates.ExecuteTemplate(w, login, nil)
+		}
 
 	case "POST":
 		user := r.FormValue("username")
@@ -94,7 +102,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				// TODO Internal error
 			}
-			http.Redirect(w, r, "/", http.StatusAccepted)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 		} else {
 			templates.ExecuteTemplate(w, login, nil) // TODO info about failed login
 		}
@@ -108,9 +116,7 @@ func startSession(w http.ResponseWriter) error {
 	key := sc.GenerateRandomKey(64)
 	s := sc.New(key, nil)
 	contents := map[string]string{
-		"connected": time.Now().Format(time.RFC3339),
-		"expires":   time.Now().Add(time.Hour * 24).Format(time.RFC3339),
-		"id":        strconv.Itoa(nextID),
+		"id": strconv.Itoa(nextID),
 	}
 
 	encoded, err := s.Encode(cookieName, contents)

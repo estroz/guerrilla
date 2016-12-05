@@ -36,6 +36,10 @@ func (g *Guerrilla) Run() {
 	}
 }
 
+type AnalyticsDataStore struct {
+}
+
+// Shared pool of client objects that prevent
 type ClientPool struct {
 	m       sync.Mutex
 	clients chan *Client
@@ -49,7 +53,7 @@ func (cp *ClientPool) Put(c *Client) {
 	select {
 	case cp.clients <- c:
 	default:
-		// Internal channel is saturated, double size
+		// Internal channel is full, double size
 		cp.resize(cap(cp.clients) * 2)
 		cp.Put(c)
 	}
